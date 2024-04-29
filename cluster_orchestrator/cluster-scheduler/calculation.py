@@ -1,5 +1,6 @@
 import logging
-
+import requests
+import json
 from mongodb_client import mongo_find_all_active_nodes
 
 
@@ -109,6 +110,120 @@ def extract_specs(node):
     }
 
 
+def get_registry_url(image_ref):
+    # Supported registry URLs
+    if "ghcr.io" in image_ref:
+        return "https://ghcr.io"
+    else:
+        return "https://registry-1.docker.io"
+
+
+def get_token(image_name):
+    """Fetches an access token for the provided image name."""
+    url = f"https://ghcr.io/token?scope=repository:{image_name}:pull"
+    response = requests.get(url)
+    response.raise_for_status()  # Raise exception for non-200 status codes
+    data = json.loads(response.text)
+    return data["token"]
+
+
+def get_manifest(image_ref, registry_url):
+
+    print("Registry url is {}".format(registry_url))
+
+    headers = {
+        "Accept": "application/vnd.docker.distribution.manifest.v2+json, "
+                  "application/vnd.docker.distribution.manifest.list.v2+json"
+    }
+    try:
+        # Split the image reference into repository and tag
+        repo, tag = image_ref.split(":", 1)
+
+        # Determine the manifest URL
+        sha = image_ref.split("@")[1] if "@" in image_ref else tag
+        url = f"{registry_url}/v2/{repo}/manifests/{sha if sha else tag}"
+
+        # Retrieve authentication token for Docker Hub
+        if registry_url == "https://registry-1.docker.io":
+            response = requests.get(
+                f"https://auth.docker.io/token?service=registry.docker.io"
+                f"&scope=repository:{repo}:pull"
+            )
+            response.raise_for_status()  # Raise exception for non-2xx status codes
+            token = response.json().get("token")
+            headers["Authorization"] = f"Bearer {token}"
+
+            # Fetch remote manifest with authorization (if applicable)
+            response = requests.get(url, headers=headers)
+
+        # If unauthorized (Docker Hub), try with Basic authentication (optional)
+        elif registry_url == "https://ghcr.io":
+            headers = {"Authorization": f"Bearer {get_token(repo)}"}
+            accept_header = "application/vnd.oci.image.index.v1+json"
+            if accept_header:
+                headers["Accept"] = accept_header
+                response = requests.get(url, headers=headers)
+                response.raise_for_status()
+
+        return response.json()
+
+    except (requests.exceptions.RequestException, KeyError) as e:
+        print(f"Error retrieving remote manifest: {e}")
+        return None
+
+
+def get_image_size(image_ref):
+
+    if image_ref.startswith("docker.io/"):
+        image_ref = image_ref.replace("docker.io/", "")
+
+    registry_url = get_registry_url(image_ref)
+    manifest = get_manifest(image_ref, registry_url)
+    if not manifest:
+        return None
+    else:
+        print("Retrieved manifest: {}".format(manifest))
+
+        if "layers" in manifest:
+            total_bytes = sum(layer["size"] for layer in manifest["layers"])
+            print("Total bytes: {}".format(total_bytes))
+            return total_bytes
+        elif "manifests" in manifest:
+            total_bytes = sum(entry["size"] for entry in manifest["manifests"])
+            print("Total bytes: {}".format(total_bytes))
+
+            return total_bytes
+        else:
+            return 1  # Unable to extract image size from manifest, all-allow policy
+
+
+def memory_estimation(available_memory, image, memory, storage=None):
+
+    estimation_factor = 3
+    if not image or image == "noImageDetected":
+        print("No image defined in job description")
+        return available_memory >= memory
+
+    # Get and convert image size to GB with error handling
+    image_size_in_bytes = get_image_size(image)
+
+    if image_size_in_bytes is None:
+        return available_memory >= memory  # Just evaluate the constraint without image size
+
+    image_size_in_gb = round(image_size_in_bytes / (1024**3), 2) * estimation_factor
+
+    total_memory_required = memory + image_size_in_gb
+    if available_memory >= total_memory_required:
+        print(f"Memory estimation for image '{image}' is {image_size_in_gb:.2f} GB")
+        print(
+            f"Available memory ({available_memory} GB) is sufficient "
+            f"({total_memory_required:.2f} GB required)"
+        )
+        print(f"Storage not considered as constraints is {storage}")
+        return True
+    return False
+
+
 def does_node_respects_requirements(node_specs, job):
     memory = 0
     if job.get("memory"):
@@ -121,6 +236,14 @@ def does_node_respects_requirements(node_specs, job):
     vgpu = 0
     if job.get("vgpu"):
         vgpu = job.get("vgpu")
+    
+    storage = 0
+    if job.get("storage"):
+        storage = job.get("storage")
+
+    image = "noImageDetected"
+    if job.get("image"):
+        image = job.get("image")
 
     virtualization = job.get("virtualization")
     if virtualization == "unikernel":
@@ -136,7 +259,7 @@ def does_node_respects_requirements(node_specs, job):
 
     if (
         node_specs["available_cpu"] >= vcpu
-        and node_specs["available_memory"] >= memory
+        and memory_estimation(node_specs["available_memory"], image, memory, storage=storage)
         and virtualization in node_specs["virtualization"]
         and node_specs["available_gpu"] >= vgpu
     ):
