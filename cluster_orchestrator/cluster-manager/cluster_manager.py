@@ -1,7 +1,6 @@
 import json
 import os
 import socket
-import time
 import grpc
 from proto.clusterRegistration_pb2 import CS1Message, SC1Message, CS2Message, KeyValue, SC2Message
 from proto.clusterRegistration_pb2_grpc import (
@@ -237,7 +236,7 @@ def register_with_system_manager():
                 {"cluster_name": MY_CHOSEN_CLUSTER_NAME, "location": MY_CLUSTER_LOCATION}
             )
             response: SC1Message = stub.handle_init_greeting(
-                message, wait_for_ready=True  # , timeout=GRPC_REQUEST_TIMEOUT
+                message, wait_for_ready=True, timeout=GRPC_REQUEST_TIMEOUT
             )
             app.logger.info(
                 "Received greeting message from System Manager: "
@@ -260,7 +259,7 @@ def register_with_system_manager():
             message.cluster_info.append(key_value_message)
 
             response: SC2Message = stub.handle_init_final(
-                message, wait_for_ready=True  # , timeout=GRPC_REQUEST_TIMEOUT
+                message, wait_for_ready=True, timeout=GRPC_REQUEST_TIMEOUT
             )
 
             app.logger.info(f"Cluster ID received: {response.id}")
