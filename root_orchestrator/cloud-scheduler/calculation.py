@@ -167,6 +167,10 @@ def does_cluster_respects_requirements(cluster, job):
     if job.get("vgpu"):
         vgpu = job.get("vgpu")
 
+    storage = 0
+    if job.get("storage"):
+        storage = job.get("storage")
+
     virtualization = job.get("virtualization")
 
     cluster_specs = None
@@ -179,7 +183,7 @@ def does_cluster_respects_requirements(cluster, job):
             cluster_specs = extract_architecture_specs(cluster, a)
             if (
                 cluster_specs["available_cpu"] >= vcpu
-                and cluster_specs["available_memory"] >= memory
+                and cluster_specs["available_memory"] >= memory + storage
                 and virtualization in cluster_specs["virtualization"]
                 and cluster_specs["available_gpu"] >= vgpu
             ):

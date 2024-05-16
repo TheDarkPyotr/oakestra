@@ -122,6 +122,10 @@ def does_node_respects_requirements(node_specs, job):
     if job.get("vgpu"):
         vgpu = job.get("vgpu")
 
+    storage = 0
+    if job.get("storage"):
+        storage = job.get("storage")
+
     virtualization = job.get("virtualization")
     if virtualization == "unikernel":
         arch = job.get("arch")
@@ -136,7 +140,7 @@ def does_node_respects_requirements(node_specs, job):
 
     if (
         node_specs["available_cpu"] >= vcpu
-        and node_specs["available_memory"] >= memory
+        and node_specs["available_memory"] >= memory + storage
         and virtualization in node_specs["virtualization"]
         and node_specs["available_gpu"] >= vgpu
     ):
