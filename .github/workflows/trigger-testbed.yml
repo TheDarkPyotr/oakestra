@@ -1,0 +1,25 @@
+name: Trigger AWX Testbed on Automation Hub
+
+on: [push, pull_request]
+
+
+jobs:
+  trigger-awx-job-repo2:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Trigger GitHub Action on Repository2
+        env:
+          GITHUB_TOKEN: ${{ secrets.AWX_TRIGGER_PAT }}  # Create a PAT with repo scope and store it in secrets
+          REPO2_OWNER: 'TheDarkPyotr'         # Replace with the owner of repository2
+          REPO2_NAME: 'ansible-tests'               # Replace with the name of repository2
+          TOPOLOGY_FILE: 'topology.json'  # Adjust this path if needed
+        run: |
+          curl -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            https://api.github.com/repos/$REPO2_OWNER/$REPO2_NAME/actions/workflows/trigger-awx-job.yml/dispatches \
+            -d '{"ref":"main", "inputs":{"topology":"'$TOPOLOGY_FILE'"}}'
