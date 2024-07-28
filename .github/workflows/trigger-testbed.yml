@@ -2,7 +2,6 @@ name: Trigger AWX Testbed on AWX Testbed Repository
 
 on: [push, pull_request]
 
-
 jobs:
   trigger-awx-repo-job:
     runs-on: ubuntu-latest
